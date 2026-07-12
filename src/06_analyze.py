@@ -110,7 +110,7 @@ def researcher_cards(con):
     for aid, lo, hi in con.execute("""
             SELECT a.author_id, min(w.year), max(w.year)
             FROM authorship a JOIN works w ON a.work_id=w.id
-            WHERE a.in_universe=TRUE AND w.year IS NOT NULL GROUP BY a.author_id"""):
+            WHERE a.in_universe=TRUE AND w.year IS NOT NULL GROUP BY a.author_id""").fetchall():
         if aid in R:
             R[aid]["first_year"], R[aid]["last_year"] = lo, hi
 
@@ -119,7 +119,7 @@ def researcher_cards(con):
     for aid, method, n in con.execute("""
             SELECT a.author_id, wm.method, count(*) c FROM authorship a
             JOIN work_methods wm ON a.work_id=wm.work_id
-            WHERE a.in_universe=TRUE GROUP BY a.author_id, wm.method"""):
+            WHERE a.in_universe=TRUE GROUP BY a.author_id, wm.method""").fetchall():
         meth[aid].append((n, method))
     for aid in R:
         R[aid]["top_methods"] = [m for _, m in sorted(meth.get(aid, []), reverse=True)[:5]]
@@ -130,7 +130,7 @@ def researcher_cards(con):
     for aid, tid, n in con.execute("""
             SELECT a.author_id, wc.topic_id, count(*) c FROM authorship a
             JOIN work_cluster wc ON a.work_id=wc.work_id
-            WHERE a.in_universe=TRUE AND wc.topic_id>=0 GROUP BY a.author_id, wc.topic_id"""):
+            WHERE a.in_universe=TRUE AND wc.topic_id>=0 GROUP BY a.author_id, wc.topic_id""").fetchall():
         topi[aid].append((n, tid))
     for aid in R:
         R[aid]["top_topics"] = [tmeta.get(t, str(t)) for _, t in sorted(topi.get(aid, []), reverse=True)[:3]]
@@ -141,7 +141,7 @@ def researcher_cards(con):
             SELECT x.author_id a, y.author_id b, count(*) c
             FROM authorship x JOIN authorship y ON x.work_id=y.work_id
             WHERE x.in_universe AND y.in_universe AND x.author_id<>y.author_id
-            GROUP BY x.author_id, y.author_id"""):
+            GROUP BY x.author_id, y.author_id""").fetchall():
         collab[a][b] = n
     for aid in R:
         cs = sorted(collab.get(aid, {}).items(), key=lambda kv: kv[1], reverse=True)[:5]
@@ -151,11 +151,11 @@ def researcher_cards(con):
     # notable papers (author's most-cited)
     for aid in R:
         R[aid]["papers"] = []
-    for aid, title, year, cites in con.execute("""
+    for aid, title, year, cites, _rn in con.execute("""
             SELECT a.author_id, w.title, w.year, w.cited_by,
                    row_number() OVER (PARTITION BY a.author_id ORDER BY w.cited_by DESC) rn
             FROM authorship a JOIN works w ON a.work_id=w.id
-            WHERE a.in_universe=TRUE QUALIFY rn <= 3"""):
+            WHERE a.in_universe=TRUE QUALIFY rn <= 3""").fetchall():
         if aid in R:
             R[aid]["papers"].append({"title": title, "year": year, "cites": cites})
     return list(R.values())
