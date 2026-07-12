@@ -113,6 +113,14 @@ HTML_TEMPLATE = r"""<!doctype html>
     display:flex;flex-wrap:wrap;gap:.4rem 1.4rem}
   .axis{font-size:10px;fill:var(--faint);font-family:ui-monospace,monospace}
   .gridline{stroke:var(--grid);stroke-width:1}
+  .disclaimer{border-radius:12px;padding:1rem 1.15rem;margin:1.4rem 0 0;
+    display:flex;gap:.85rem;align-items:flex-start;font-size:.9rem;line-height:1.5}
+  .disclaimer.warn{background:color-mix(in srgb,var(--amber) 14%,var(--surface));
+    border:1px solid color-mix(in srgb,var(--amber) 55%,var(--line));color:var(--text)}
+  .disclaimer.note{background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:.82rem}
+  .disclaimer .ic{font-size:1.15rem;line-height:1;flex:none}
+  .disclaimer b{color:var(--amber)}
+  .disclaimer.note b{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -124,6 +132,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   </div>
   <div id="statuspill" class="pill"><span class="dot live"></span><span id="statustxt">building…</span></div>
 </div>
+<div id="disclaimer"></div>
 <div id="tiles" class="tiles"></div>
 </div></header>
 
@@ -181,9 +190,27 @@ function css(v){return getComputedStyle(document.body).getPropertyValue(v).trim(
 (function(){
   const stage = DATA.stage, m = DATA.meta||{};
   const label = {seed:'initializing', universe:'universe discovered — harvesting corpus',
-                 full:'complete'}[stage] || 'building…';
+                 corpus:'corpus harvested — running analyses', full:'analysis complete'}[stage] || 'building…';
   $('#statustxt').textContent = label;
   if(stage==='full'){ $('#statuspill').querySelector('.dot').classList.remove('live'); }
+  // disclaimer — prominent while data is provisional, a caveat note when final
+  const dz = $('#disclaimer');
+  if(stage!=='full'){
+    dz.className='disclaimer warn';
+    dz.innerHTML='<span class="ic">⚠️</span><div><b>Work in progress — numbers are provisional.</b> '
+      +'The corpus is still being harvested and per-researcher publication and citation counts are '
+      +'being recomputed from the retrieved papers. Some counts shown now are preliminary discovery-stage '
+      +'estimates and are undercounted for authors whose names carry diacritics or appear as initials '
+      +'(a known limitation of name-based Crossref attribution). Figures will update automatically as the '
+      +'pipeline completes.</div>';
+  } else {
+    dz.className='disclaimer note';
+    dz.innerHTML='<span class="ic">ℹ️</span><div><b>About the data.</b> Built from '
+      +'<a href="https://www.crossref.org">Crossref</a> (open metadata). Author identity is inferred from a '
+      +'normalized name key with venue/keyword relevance filtering — disambiguation and coverage are '
+      +'heuristic, so counts for authors with name variants or common names may be under- or over-stated, '
+      +'and abstract coverage is partial. Treat figures as field-scale signal, not exact bibliometrics.</div>';
+  }
   const tiles = [
     ['Researchers', fmt(m.researchers)],
     ['Publications', m.works!=null?fmt(m.works):'<small>harvesting…</small>'],

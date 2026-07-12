@@ -45,14 +45,40 @@ def clean_inst(s):
     return re.sub(r"\s+", " ", pick)[:60]
 
 
+def read_db_context():
+    """After build_db (before full analysis): accurate corpus + per-researcher
+    stats straight from DuckDB, so counts reflect the harvested corpus."""
+    import duckdb
+    con = duckdb.connect(config.DB_PATH, read_only=True)
+    n_works = con.execute("SELECT count(*) FROM works").fetchone()[0]
+    n_abs = con.execute("SELECT count(*) FROM works WHERE abstract IS NOT NULL").fetchone()[0]
+    n_res = con.execute("SELECT count(*) FROM researchers").fetchone()[0]
+    n_seed = con.execute("SELECT count(*) FROM researchers WHERE seed").fetchone()[0]
+    yr = con.execute("SELECT min(year), max(year) FROM works WHERE year IS NOT NULL").fetchone()
+    rows = con.execute("""
+        SELECT name, institution, cited_by_count, works_count, recent_year, seed
+        FROM researchers ORDER BY cited_by_count DESC NULLS LAST LIMIT 1200
+    """).fetchall()
+    con.close()
+    researchers = [{
+        "name": r[0], "inst": clean_inst(r[1]), "cites": r[2], "works": r[3],
+        "last": r[4], "seed": bool(r[5]), "methods": [], "topics": [], "collab": [],
+    } for r in rows]
+    meta = {"researchers": n_res, "works": n_works, "works_with_abstract": n_abs,
+            "seeds": n_seed, "year_min": yr[0] or config.YEAR_MIN, "year_max": yr[1] or config.YEAR_MAX}
+    return {"meta": meta, "researchers": researchers}
+
+
 def load_context():
     """Assemble whatever data is available into a compact context for the page."""
     ctx = {"stage": "seed"}
     if os.path.exists(ANALYSIS):
         with open(ANALYSIS) as fh:
-            a = json.load(fh)
-        ctx["analysis"] = a
+            ctx["analysis"] = json.load(fh)
         ctx["stage"] = "full"
+    elif os.path.exists(config.DB_PATH):
+        ctx["db"] = read_db_context()
+        ctx["stage"] = "corpus"
     elif os.path.exists(RESEARCHERS):
         rows = [json.loads(l) for l in open(RESEARCHERS) if l.strip()]
         rows.sort(key=lambda r: r.get("score", 0), reverse=True)
@@ -92,6 +118,9 @@ def compact_for_page(ctx):
             "topics": (r.get("top_topics") or [])[:3],
             "collab": [c.get("name") for c in (r.get("collaborators") or [])[:4]],
         } for r in R[:1200]]
+    elif "db" in ctx:
+        out["meta"] = ctx["db"]["meta"]
+        out["researchers"] = ctx["db"]["researchers"]
     elif "researchers_partial" in ctx:
         rows = ctx["researchers_partial"]
         out["researchers"] = [{
