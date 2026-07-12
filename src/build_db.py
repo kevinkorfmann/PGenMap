@@ -28,6 +28,17 @@ def read_jsonl(path):
                 yield json.loads(line)
 
 
+def _flush(con, work_rows, auth_rows, wt_rows):
+    """Insert batches, skipping empties (DuckDB executemany rejects []; Crossref
+    works carry no topic ids so wt_rows is always empty)."""
+    if work_rows:
+        con.executemany("INSERT INTO works VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", work_rows)
+    if auth_rows:
+        con.executemany("INSERT INTO authorship VALUES (?,?,?,?,?,?)", auth_rows)
+    if wt_rows:
+        con.executemany("INSERT INTO work_topics VALUES (?,?)", wt_rows)
+
+
 def main() -> None:
     if os.path.exists(config.DB_PATH):
         os.remove(config.DB_PATH)
@@ -87,14 +98,9 @@ def main() -> None:
                 wt_rows.append([w["id"], tid])
         n += 1
         if len(work_rows) >= 20000:
-            con.executemany("INSERT INTO works VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", work_rows)
-            con.executemany("INSERT INTO authorship VALUES (?,?,?,?,?,?)", auth_rows)
-            con.executemany("INSERT INTO work_topics VALUES (?,?)", wt_rows)
+            _flush(con, work_rows, auth_rows, wt_rows)
             work_rows, auth_rows, wt_rows = [], [], []
-    if work_rows:
-        con.executemany("INSERT INTO works VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", work_rows)
-        con.executemany("INSERT INTO authorship VALUES (?,?,?,?,?,?)", auth_rows)
-        con.executemany("INSERT INTO work_topics VALUES (?,?)", wt_rows)
+    _flush(con, work_rows, auth_rows, wt_rows)
     print(f"works: {n}")
 
     # recompute accurate per-researcher stats from the harvested corpus

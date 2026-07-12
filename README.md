@@ -72,10 +72,6 @@ bash run.sh
 
 ## Data sources & licensing
 
-OpenAlex data is CC0. This repository contains code and derived aggregates, not
-bulk redistribution of the source databases. Please cite OpenAlex, Semantic
-Scholar, and Crossref if you build on this.
-
----
-
-*Built with [Claude Code](https://claude.com/claude-code).*
+Crossref metadata is openly available. This repository contains code and derived
+aggregates, not bulk redistribution of the source database. Please cite Crossref
+(and OpenAlex / Semantic Scholar if you extend the pipeline to those sources).

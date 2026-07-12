@@ -174,7 +174,6 @@ HTML_TEMPLATE = r"""<!doctype html>
 <footer><div class="wrap" style="display:flex;flex-wrap:wrap;gap:.4rem 1.4rem">
   <span>Data: <a href="https://www.crossref.org">Crossref</a> (open)</span>
   <span>Source: <a href="https://github.com/kevinkorfmann/PGenMap">github.com/kevinkorfmann/PGenMap</a></span>
-  <span>Built with Claude Code</span>
 </div></footer>
 
 <div id="nettip"></div>
