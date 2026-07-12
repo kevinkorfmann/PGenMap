@@ -102,6 +102,19 @@ CSS = r"""
   .disclaimer .ic{font-size:1.15rem;line-height:1;flex:none}
   .disclaimer b{color:var(--amber)}
   .disclaimer.note b{color:var(--muted)}
+  .atlas-shell{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 18px 48px color-mix(in srgb,var(--ink) 22%,transparent)}
+  .atlas-toolbar{display:flex;flex-wrap:wrap;gap:.55rem;align-items:center;padding:.8rem;border-bottom:1px solid var(--line);background:var(--surface2)}
+  .atlas-toolbar select,.atlas-toolbar input{background:var(--surface);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit;padding:.42rem .58rem;min-width:150px}
+  .atlas-toolbar input{flex:1 1 190px}.atlas-toolbar label{font-size:.76rem;color:var(--muted);display:flex;gap:.35rem;align-items:center}
+  #atlascanvas{width:100%;height:min(68vw,620px);min-height:420px;display:block;touch-action:none;cursor:grab;background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--teal) 8%,transparent),transparent 54%)}
+  .atlas-foot{padding:.65rem .9rem;color:var(--muted);font-size:.78rem;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+  .atlas-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;align-items:stretch}.atlas-detail{border-left:1px solid var(--line);padding:1rem;max-height:620px;overflow:auto;background:var(--surface)}
+  .atlas-detail h3{font-family:ui-serif,Georgia,serif;line-height:1.15;margin:.1rem 0 .5rem;font-size:1.12rem}.atlas-detail p{font-size:.85rem;color:var(--muted)}
+  .score{font:600 2rem ui-monospace,monospace;color:var(--teal);line-height:1}.score small{font-size:.72rem;color:var(--muted);font-weight:400}.meters{display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem;margin:1rem 0}.meter{font-size:.7rem;color:var(--faint)}.meter i{display:block;height:4px;background:var(--line);margin-top:.2rem;border-radius:4px;overflow:hidden}.meter b{display:block;height:100%;background:var(--teal)}
+  .opps{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:.75rem}.opp{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:.9rem;cursor:pointer}.opp:hover{border-color:var(--teal)}.opp h3{font-size:.95rem;margin:0 0 .35rem}.opp p{font-size:.78rem;color:var(--muted);margin:.3rem 0}.opp .tag{font:.68rem ui-monospace,monospace;color:var(--amber);text-transform:uppercase;letter-spacing:.08em}
+  .primer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem;margin:1.15rem 0 0}.primer .card{padding:1rem}.primer h3{font-size:.98rem;margin:.05rem 0 .4rem}.primer p{font-size:.86rem;color:var(--muted);margin:0}.primer .num{font:600 .72rem ui-monospace,monospace;color:var(--teal);letter-spacing:.09em}
+  .case-studies{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:.8rem;margin-top:1rem}.case{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1rem}.case h3{font-family:ui-serif,Georgia,serif;font-size:1.08rem;margin:.1rem 0 .4rem}.case p{font-size:.85rem;color:var(--muted);margin:.3rem 0 .75rem}.case a{display:inline-block;background:var(--teal);border:0;border-radius:999px;padding:.4rem .75rem;color:#04110f;font:600 .78rem system-ui,sans-serif;cursor:pointer}.case a:hover{filter:brightness(1.08);text-decoration:none}
+  @media(max-width:760px){.atlas-layout{grid-template-columns:1fr}.atlas-detail{border-left:0;border-top:1px solid var(--line);max-height:none}#atlascanvas{min-height:360px}.primer{grid-template-columns:1fr}}
 """
 
 # --- shared JS preamble (helpers used by every section) ---------------------
@@ -151,7 +164,7 @@ STATUS_JS = r"""
   const tiles=[['Researchers',fmt(m.researchers)],
     ['Publications',m.works!=null?fmt(m.works):'<small>harvesting…</small>'],
     ['With abstracts',m.works_with_abstract!=null?fmt(m.works_with_abstract):'<small>—</small>'],
-    ['Span',(m.year_min?`${m.year_min}–${m.year_max}`:'1985–2025')],
+    ['Span',(m.year_min?`${m.year_min}–${m.year_max}`:'mapped period')],
     ['Topics',(DATA.topics&&DATA.topics.length)?fmt(DATA.topics.length):'<small>—</small>'],
     ['Schools',(m.communities)?fmt(m.communities):'<small>—</small>']];
   tiles.forEach(([k,v])=>{const t=el('div','tile'); t.appendChild(el('p','k',k)); t.appendChild(el('p','v',v)); box.appendChild(t);});
@@ -166,6 +179,34 @@ FIGURES_JS = r"""
   DATA.figures.forEach(f=>{ const c=el('div','gfig'+(f.wide?' wide':''));
     c.innerHTML=`<a href="figures/${f.file}" target="_blank" rel="noopener"><img loading="lazy" alt="${f.title}" src="figures/${f.file}"></a><div class="cap"><b>${f.title}.</b> ${f.caption||''}</div>`;
     g.appendChild(c); });
+})();
+"""
+
+ATLAS_JS = r"""
+(function(){
+  const host=$('#atlas-body'), opp=$('#opportunity-body'); if(!host)return;
+  fetch('data/atlas.json').then(r=>r.ok?r.json():Promise.reject()).then(atlas=>{
+    host.innerHTML=`<div class="atlas-shell"><div class="atlas-toolbar"><label>Topic <select id="atlas-topic"><option value="">All themes</option></select></label><label>From <select id="atlas-year"></select></label><input id="atlas-search" placeholder="Find a topic or paper…" aria-label="Find a topic or paper"></div><div class="atlas-layout"><div><canvas id="atlascanvas" aria-label="Interactive semantic map of population genetics papers"></canvas><div class="atlas-foot"><span id="atlas-count"></span><span>Scroll to zoom · drag to pan · click a point for evidence</span></div></div><aside id="atlas-detail" class="atlas-detail"><h3>Explore the field</h3><p>Each point is a paper. Nearby papers use similar language; colours show macro themes. Zoom in to resolve individual papers.</p></aside></div></div>`;
+    const cv=$('#atlascanvas'), detail=$('#atlas-detail'), topic=$('#atlas-topic'), year=$('#atlas-year'), search=$('#atlas-search'), count=$('#atlas-count');
+    const macro=new Map(atlas.macros.map(m=>[m.id,m.label])), topics=new Map(atlas.topics.map(t=>[t.id,t]));
+    atlas.macros.filter(m=>m.id>=0).forEach(m=>topic.add(new Option(m.label.replace(/^[-\d_]+/,'').slice(0,54),m.id)));
+    const years=[...new Set(atlas.points.map(p=>p.year).filter(Boolean))].sort((a,b)=>a-b); year.add(new Option('All years','')); years.forEach(y=>year.add(new Option(y,y)));
+    const q=new URLSearchParams(location.search); topic.value=q.get('topic')||''; year.value=q.get('year')||'';
+    let view={x:0,y:0,s:1}, drag, W=0,H=0,DPR=1, filtered=[];
+    const color=id=>PAL[Math.abs(Number(id)||0)%PAL.length]; const screen=p=>({x:(p.x-.5)*Math.min(W,H)*.92*view.s+W/2+view.x,y:(p.y-.5)*Math.min(W,H)*.92*view.s+H/2+view.y});
+    function syncUrl(){const u=new URL(location);topic.value?u.searchParams.set('topic',topic.value):u.searchParams.delete('topic');year.value?u.searchParams.set('year',year.value):u.searchParams.delete('year');history.replaceState({},'',u);}
+    function filter(){const term=search.value.trim().toLowerCase(); filtered=atlas.points.filter(p=>(!topic.value||String(p.macro)===topic.value)&&(!year.value||String(p.year)===year.value)&&(!term||p.title.toLowerCase().includes(term)||(topics.get(p.fine)?.label||'').toLowerCase().includes(term)||p.methods.join(' ').toLowerCase().includes(term))); count.textContent=`${filtered.length.toLocaleString()} of ${atlas.points.length.toLocaleString()} papers · ${atlas.coverage.abstracts.toLocaleString()} with abstracts`; syncUrl();draw();}
+    function draw(){const c=cv.getContext('2d');c.setTransform(DPR,0,0,DPR,0,0);c.clearRect(0,0,W,H); const density=view.s<1.25;
+      if(density){const bins=new Map;filtered.forEach(p=>{const a=screen(p),x=Math.floor(a.x/8),y=Math.floor(a.y/8);if(x<0||y<0||x>W/8||y>H/8)return;const k=x+','+y;bins.set(k,(bins.get(k)||0)+1)});bins.forEach((n,k)=>{const [x,y]=k.split(',').map(Number);c.fillStyle='rgba(55,201,184,'+Math.min(.8,.12+Math.log(n)/5)+')';c.fillRect(x*8,y*8,7,7)});return}
+      filtered.forEach(p=>{const a=screen(p);if(a.x<-3||a.y<-3||a.x>W+3||a.y>H+3)return;c.fillStyle=color(p.macro);c.globalAlpha=.62;c.beginPath();c.arc(a.x,a.y,view.s>2?2:1.35,0,7);c.fill()});c.globalAlpha=1;}
+    function show(p){const t=topics.get(p.fine);if(!p)return;const paper=`<p><b>${p.title}</b><br>${p.year||'undated'}${p.doi?` · <a target="_blank" rel="noopener" href="https://doi.org/${p.doi}">DOI ↗</a>`:''}</p>`;if(!t){detail.innerHTML='<h3>Paper</h3>'+paper;return}detail.innerHTML=`<div class="tag">${macro.get(p.macro)||'Theme'}</div><h3>${t.label.replace(/^[-\d_]+/,'')}</h3><div class="score">${t.opportunity==null?'—':t.opportunity}<small> / 100 opportunity signal</small></div><p>${t.keywords||'No keyword summary available.'}</p><div class="meters">${Object.entries(t.components||{}).map(([k,v])=>`<span class="meter">${k} ${v}<i><b style="width:${v}%"></b></i></span>`).join('')}</div><p>${t.recent||0} papers in the latest five complete years; ${t.size} total. This is a corpus-derived signal, not a claim of field-wide neglect.</p>${paper}`}
+    function resize(){DPR=Math.min(2,devicePixelRatio||1);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;draw()}new ResizeObserver(resize).observe(cv);
+    cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};cv.setPointerCapture(e.pointerId)});cv.addEventListener('pointermove',e=>{if(!drag)return;view.x=drag.vx+e.clientX-drag.x;view.y=drag.vy+e.clientY-drag.y;draw()});cv.addEventListener('pointerup',e=>{if(drag&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;let best,dist=12;filtered.forEach(p=>{const a=screen(p),d=Math.hypot(a.x-mx,a.y-my);if(d<dist){best=p;dist=d}});show(best)}drag=null});cv.addEventListener('wheel',e=>{e.preventDefault();view.s=Math.max(.55,Math.min(8,view.s*(e.deltaY<0?1.16:.86)));draw()},{passive:false});
+    topic.onchange=filter;year.onchange=filter;search.oninput=filter;filter();resize();
+    document.querySelectorAll('[data-atlas-query]').forEach(b=>b.onclick=()=>{search.value=b.dataset.atlasQuery;filter();host.scrollIntoView({behavior:'smooth',block:'start'});});
+    document.querySelectorAll('[data-atlas-opportunity]').forEach(b=>b.onclick=()=>$('#sec-opportunity').scrollIntoView({behavior:'smooth',block:'start'}));
+    if(opp){opp.innerHTML='';atlas.topics.filter(t=>t.opportunity!=null).slice(0,9).forEach(t=>{const c=el('article','opp');c.innerHTML=`<div class="tag">${t.trend} bridge</div><h3>${t.label.replace(/^[-\d_]+/,'')}</h3><div class="score">${t.opportunity}<small> / 100</small></div><p>${t.recent} recent papers · bridge ${t.components.bridge} · growth ${t.components.growth}</p>`;c.onclick=()=>{topic.value=t.parent;filter();detail.scrollIntoView({behavior:'smooth',block:'nearest'});show(atlas.points.find(p=>p.fine===t.id))};opp.appendChild(c)})}
+  }).catch(()=>{building('#atlas-body','The interactive atlas will appear after the next pipeline refresh.');if(opp)building('#opportunity-body','Opportunity signals are generated with the atlas data.');});
 })();
 """
 
@@ -320,8 +361,8 @@ def _page(title, head_html, body_html, js):
 
 
 _MAIN_HEAD = """<header><div class="wrap"><div class="head">
-  <div class="grow"><p class="eyebrow">Bibliometric cartography · 1985–2025</p>
-    <h1>The evolution of <em>population genetics</em></h1></div>
+  <div class="grow"><p class="eyebrow">Bibliometric cartography · field evolution</p>
+    <h1>The <em>population genetics</em> atlas</h1></div>
   <a class="navlink" href="scientists.html">Researcher directory →</a>
   <div id="statuspill" class="pill"><span class="dot live"></span><span id="statustxt">building…</span></div>
 </div>
@@ -329,7 +370,27 @@ _MAIN_HEAD = """<header><div class="wrap"><div class="head">
 <div id="tiles" class="tiles"></div>
 </div></header>"""
 
-_MAIN_BODY = """  <section id="sec-figures"><div class="sec-h"><h2>Figures</h2></div>
+_MAIN_BODY = """  <section id="sec-intro" style="border-top:none"><div class="sec-h"><h2>How to read this atlas</h2></div>
+    <p class="sub">This is a map of the field’s language and research questions—not a geographic map and not a ranking of paper quality. It places papers near one another when their titles and abstracts use similar concepts. The current corpus runs from 1921 to 2026 and is rebuilt from Crossref metadata.</p>
+    <div class="primer">
+      <article class="card"><div class="num">01 · DISTANCE</div><h3>Near means conceptually similar</h3><p>For example, papers about <em>ancient DNA</em>, <em>admixture</em>, and <em>human ancestry</em> tend to form nearby neighbourhoods. A paper on <em>tree sequences</em> may sit closer to simulation and inference work than to conservation genomics.</p></article>
+      <article class="card"><div class="num">02 · COLOUR & ZOOM</div><h3>Start broad, then inspect a niche</h3><p>Colour identifies a large theme. Zooming reveals individual papers and smaller subtopics inside it—such as a particular organism, method, or application. Try searching “ancient DNA,” “selection,” or “simulation,” then click a point.</p></article>
+      <article class="card"><div class="num">03 · OPPORTUNITY SIGNALS</div><h3>Evidence, not a verdict</h3><p>A high score combines recent growth, connections to other themes, and a still-modest share of the corpus. For example, a small fast-growing bridge between machine learning and demographic inference can score highly; it does not prove the area is objectively neglected.</p></article>
+    </div>
+    <div class="sec-h" style="margin-top:1.8rem"><h2>Try a case study</h2></div>
+    <p class="sub">These are starting questions a researcher, student, or funder might bring to the atlas. Each button sets up the map; then zoom, inspect papers, and compare the evidence rather than relying on the first result.</p>
+    <div class="case-studies">
+      <article class="case"><div class="num">METHOD TRAJECTORY</div><h3>Where is deep learning connecting?</h3><p>Search the method, then inspect nearby themes. Are papers concentrated in selection scans, simulations, demographic inference, or spread across several neighbourhoods? Use the detail panel to open representative papers.</p><a href="#sec-atlas" data-atlas-query="Deep learning">Explore deep learning</a></article>
+      <article class="case"><div class="num">FIELD HISTORY</div><h3>How did ancient DNA reshape the map?</h3><p>Search ancient DNA and use the year filter to compare early work with recent literature. Look for which neighbouring methods and questions appear as the area grows.</p><a href="#sec-atlas" data-atlas-query="Ancient DNA">Explore ancient DNA</a></article>
+      <article class="case"><div class="num">RESEARCH DIRECTION</div><h3>Which small bridges merit a closer look?</h3><p>Open an Opportunity Lab card, then read its growth, bridge, and niche components. Treat it as a shortlist for literature review—check its papers before treating it as a research gap.</p><a href="#sec-opportunity" data-atlas-opportunity="true">Open opportunity signals</a></article>
+    </div></section>
+  <section id="sec-atlas"><div class="sec-h"><h2>Explore the semantic landscape</h2></div>
+    <p class="sub">Each point is one paper. Scroll to zoom, drag to pan, and click a point to see its subtopic, opportunity evidence, methods, and DOI. At wide zoom, the map becomes a density view so that crowded areas remain readable.</p>
+    <div id="atlas-body"></div></section>
+  <section id="sec-opportunity"><div class="sec-h"><h2>Opportunity lab</h2></div>
+    <p class="sub">Emerging bridges are small but established subtopics combining recent momentum with links across the field. The score is 45% recent growth, 35% cross-theme semantic bridging, and 20% modest current share. Open a card to locate it on the map and inspect the underlying evidence.</p>
+    <div id="opportunity-body"></div></section>
+  <section id="sec-figures"><div class="sec-h"><h2>Evidence library</h2></div>
     <p class="sub">A UMAP semantic map of the whole corpus, plus method, topic, growth and community plots. Click any figure to open it full size.</p>
     <div id="figures-body"></div></section>
   <section id="sec-methods"><div class="sec-h"><h2>Method trajectories</h2></div>
@@ -346,7 +407,7 @@ _MAIN_BODY = """  <section id="sec-figures"><div class="sec-h"><h2>Figures</h2><
     <div id="pivotal-body"></div></section>"""
 
 _SCI_HEAD = """<header><div class="wrap"><div class="head">
-  <div class="grow"><p class="eyebrow">Bibliometric cartography · 1985–2025</p>
+  <div class="grow"><p class="eyebrow">Bibliometric cartography · field evolution</p>
     <h1>Researcher <em>directory</em></h1></div>
   <a class="navlink" href="index.html">← Back to dashboard</a>
   <div id="statuspill" class="pill"><span class="dot"></span><span id="statustxt">directory</span></div>
@@ -358,8 +419,8 @@ _SCI_BODY = """  <section id="sec-people" style="border-top:none;padding-top:1re
     <p class="sub">Everyone in the map, ranked by in-corpus impact. Search by name, institution, or method. Seeds are the starting researchers; the rest were found by co-authorship expansion.</p>
     <div id="people-body"></div></section>"""
 
-MAIN_TEMPLATE = _page("PGenMap — Evolution of Population Genetics", _MAIN_HEAD, _MAIN_BODY,
-                      STATUS_JS + FIGURES_JS + METHODS_JS + TOPICS_JS + NETWORK_JS + PIVOTAL_JS)
+MAIN_TEMPLATE = _page("PGenMap — Population Genetics Atlas", _MAIN_HEAD, _MAIN_BODY,
+                      STATUS_JS + ATLAS_JS + FIGURES_JS + METHODS_JS + TOPICS_JS + NETWORK_JS + PIVOTAL_JS)
 SCIENTISTS_TEMPLATE = _page("PGenMap — Researcher Directory", _SCI_HEAD, _SCI_BODY,
                             STATUS_JS + PEOPLE_JS)
 

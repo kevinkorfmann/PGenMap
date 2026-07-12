@@ -25,6 +25,7 @@ from src import crossref as cr
 
 OUT_PATH = os.path.join(config.DATA, "researchers.jsonl")
 KW = [re.compile(k, re.IGNORECASE) for k in config.POPGEN_TITLE_KEYWORDS]
+HISTORICAL_KW = [re.compile(k, re.IGNORECASE) for k in config.HISTORICAL_TITLE_KEYWORDS]
 SPECIALIST = [j.lower() for j in config.POPGEN_JOURNALS]
 
 SEED_MAX_WORKS = 800
@@ -41,7 +42,8 @@ def popgen_relevance(item) -> int:
     if any(j in venue for j in SPECIALIST):
         score += 2
     title = (cr.title_of(item) or "")
-    if title and any(k.search(title) for k in KW):
+    patterns = KW + (HISTORICAL_KW if config.YEAR_MIN < config.MODERN_YEAR_MIN else [])
+    if title and any(k.search(title) for k in patterns):
         score += 1
     return score
 
@@ -132,7 +134,10 @@ def main():
 
     # hop 0: seeds
     seed_keys = {}
-    for disp, hint in config.SEED_RESEARCHERS:
+    seeds = list(config.SEED_RESEARCHERS)
+    if config.YEAR_MIN < config.MODERN_YEAR_MIN:
+        seeds += list(config.HISTORICAL_SEED_RESEARCHERS)
+    for disp, hint in seeds:
         q, key = resolve_seed_query(disp)
         seed_keys[key] = disp
     U.seeds = set(seed_keys)

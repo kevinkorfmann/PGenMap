@@ -20,8 +20,12 @@ OUT = os.path.join(ROOT, "outputs")
 FIG = os.path.join(OUT, "figures")
 
 # --- Scope -----------------------------------------------------------------
-YEAR_MIN = 1985          # focus window start
-YEAR_MAX = 2025
+# The next full refresh is intentionally a century-scale rebuild.  Existing
+# committed outputs are a 1985–2025 snapshot and remain valid until that run.
+YEAR_MIN = 1920
+YEAR_MAX = 2026
+MODERN_YEAR_MIN = 1985
+HISTORICAL_YEAR_MIN = 1920
 TARGET_UNIVERSE = 2200   # keep roughly this many top-ranked researchers
 
 # --- Seed researchers ------------------------------------------------------
@@ -138,6 +142,20 @@ SEED_RESEARCHERS: list[tuple[str, str | None]] = [
     ("Rasmus Heller", "Copenhagen"),
 ]
 
+# Historical anchors are deliberately kept apart from the contemporary seed
+# universe.  They make the 1920–1984 expansion a field-history corpus rather
+# than merely a backfill of living researchers' publication lists.
+HISTORICAL_SEED_RESEARCHERS: list[tuple[str, str | None]] = [
+    ("Ronald A. Fisher", None), ("Sewall Wright", None),
+    ("J. B. S. Haldane", None), ("Theodosius Dobzhansky", None),
+    ("Motoo Kimura", None), ("Richard C. Lewontin", None),
+    ("James F. Crow", None), ("Masatoshi Nei", None),
+    ("Luigi Luca Cavalli-Sforza", None), ("John Maynard Smith", None),
+    ("William D. Hamilton", None), ("Brian Charlesworth", None),
+    ("Robert R. Hudson", None), ("Montgomery Slatkin", None),
+    ("Warren J. Ewens", None), ("Daniel Hartl", None),
+]
+
 # --- Popgen topic / concept anchors (OpenAlex) -----------------------------
 # Verified live. CORE topics drive discovery crawling and the strict relevance
 # signal; the broader set adds weak, down-weighted signal only.
@@ -215,6 +233,16 @@ POPGEN_TITLE_KEYWORDS = [
     r"whole[- ]genome", r"nucleotide diversity", r"fst", r"heterozygosity",
     r"quantitative genetic", r"heritability", r"genomic prediction", r"inbreeding",
     r"hybridi", r"domestication", r"local adaptation", r"evolutionary genom",
+]
+
+# Older records often predate the modern vocabulary used above.  These terms
+# are an additional relevance signal for the historical rebuild, not a loose
+# enough gate to admit generic biology papers.
+HISTORICAL_TITLE_KEYWORDS = [
+    r"gene frequenc", r"genetic drift", r"population structure",
+    r"population genet", r"natural selection", r"mutation.*selection",
+    r"genetic load", r"fitness", r"inbreeding", r"heterozygos",
+    r"quantitative genetic", r"chromosome polymorphism", r"neutral theory",
 ]
 
 # --- Method lexicon --------------------------------------------------------

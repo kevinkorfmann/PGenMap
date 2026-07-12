@@ -22,6 +22,7 @@ RESEARCHERS = os.path.join(config.DATA, "researchers.jsonl")
 WORKS_OUT = os.path.join(config.DATA, "works.jsonl")
 REFS_OUT = os.path.join(config.DATA, "refs.jsonl")
 KW = [re.compile(k, re.IGNORECASE) for k in config.POPGEN_TITLE_KEYWORDS]
+HISTORICAL_KW = [re.compile(k, re.IGNORECASE) for k in config.HISTORICAL_TITLE_KEYWORDS]
 SPECIALIST = [j.lower() for j in config.POPGEN_JOURNALS]
 MAX_WORKS = 1200
 
@@ -32,7 +33,8 @@ def popgen_relevance(item) -> int:
     if any(j in venue for j in SPECIALIST):
         score += 2
     title = cr.title_of(item) or ""
-    if title and any(k.search(title) for k in KW):
+    patterns = KW + (HISTORICAL_KW if config.YEAR_MIN < config.MODERN_YEAR_MIN else [])
+    if title and any(k.search(title) for k in patterns):
         score += 1
     return score
 

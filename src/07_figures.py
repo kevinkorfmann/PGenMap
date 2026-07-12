@@ -98,10 +98,17 @@ def fig_umap(con):
         ax.text(cx, cy, clean_topic(tmeta.get(t, str(t))), fontsize=9, weight="bold",
                 ha="center", va="center", color=INK,
                 bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=color_of[t], alpha=0.85, lw=1.2))
+    # A handful of UMAP outliers can otherwise reserve most of the canvas for
+    # empty space.  Crop only the extreme 0.5% tails; the dense field remains
+    # intact and the semantic structure becomes legible at dashboard size.
+    for axis, vals in ((ax.set_xlim, xy[:, 0]), (ax.set_ylim, xy[:, 1])):
+        lo, hi = np.percentile(vals, [0.5, 99.5])
+        pad = (hi - lo) * 0.055
+        axis(lo - pad, hi + pad)
     ax.set_xticks([]); ax.set_yticks([]); ax.grid(False)
     for s in ax.spines.values():
         s.set_visible(False)
-    ax.set_title("Semantic map of the corpus — 28,885 papers by topic (UMAP of abstract embeddings)",
+    ax.set_title(f"Semantic map of the corpus — {len(ids):,} papers by topic (UMAP of abstract embeddings)",
                  fontsize=13, weight="bold", loc="left", pad=12)
     ax.set_xlabel("Each point is a paper; nearby points read similarly. Colour = one of the 14 largest topics.",
                   fontsize=9.5, color=MUTED)
@@ -159,7 +166,7 @@ def fig_growth(analysis):
     ax.fill_between(YEARS, tot, color=PAL[0], alpha=0.18)
     ax.plot(YEARS, tot, color=PAL[0], lw=2.4)
     ax.set_xlim(Y0, Y1); ax.set_ylabel("papers in corpus")
-    ax.set_title("Corpus growth, 1985–2025", fontsize=13, weight="bold", loc="left")
+    ax.set_title(f"Corpus growth, {Y0}–{Y1}", fontsize=13, weight="bold", loc="left")
     save(fig, "growth.png")
 
 

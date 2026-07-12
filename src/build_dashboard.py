@@ -152,7 +152,7 @@ FIGURE_META = [
      "Signature methods as a share of yearly output — the coalescent rises throughout; clustering, sequencing, ancient DNA and deep learning arrive in waves.", False),
     ("topic_streamgraph.png", "Topic evolution",
      "The twelve largest themes as a share of yearly output.", False),
-    ("growth.png", "Corpus growth, 1985–2025",
+    ("growth.png", "Corpus growth across the mapped period",
      "Population-genetics papers per year in the mapped corpus.", False),
     ("community_sizes.png", "Schools of thought",
      "The largest co-authorship communities, labelled by their distinctive method and a notable member.", False),

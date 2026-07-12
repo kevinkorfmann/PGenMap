@@ -22,6 +22,7 @@ import config
 EMB_NPY = os.path.join(config.DATA, "embeddings.npy")
 EMB_IDS = os.path.join(config.DATA, "emb_ids.json")
 MIN_TOPIC_SIZE = 120     # macro topics -> interpretable field themes
+MIN_FINE_TOPIC_SIZE = 30
 
 
 def write_tables(con, meta_rows, cluster_rows) -> None:
@@ -31,6 +32,55 @@ def write_tables(con, meta_rows, cluster_rows) -> None:
     con.execute("CREATE TABLE work_cluster(work_id TEXT, topic_id INT)")
     con.executemany("INSERT INTO topic_meta VALUES (?,?,?,?,?)", meta_rows)
     con.executemany("INSERT INTO work_cluster VALUES (?,?)", cluster_rows)
+
+
+def write_fine_topics(con, ids, macro_topics, emb, docs, macro_meta) -> None:
+    """Create a drill-down layer inside each macro topic.
+
+    Fine IDs are stable within a run (macro_id * 10,000 + local id). Small or
+    noisy macro clusters retain one explicitly labelled catch-all topic rather
+    than manufacturing false precision.
+    """
+    from hdbscan import HDBSCAN
+    from sklearn.feature_extraction.text import CountVectorizer
+
+    by_macro = {}
+    for i, macro in enumerate(macro_topics):
+        if macro >= 0:
+            by_macro.setdefault(int(macro), []).append(i)
+    meta, rows = [], []
+    for macro, ix in by_macro.items():
+        base_label = macro_meta.get(macro, str(macro))
+        local = np.zeros(len(ix), dtype=int)
+        if len(ix) >= MIN_FINE_TOPIC_SIZE * 2:
+            labels = HDBSCAN(min_cluster_size=MIN_FINE_TOPIC_SIZE, min_samples=5,
+                             metric="euclidean", cluster_selection_method="eom").fit_predict(emb[ix])
+            # Assign noise to a per-macro catch-all; valid clusters start at 1.
+            unique = sorted(x for x in set(labels) if x >= 0)
+            remap = {old: n + 1 for n, old in enumerate(unique)}
+            local = np.array([remap.get(x, 0) for x in labels], dtype=int)
+        for sub in sorted(set(local)):
+            members = [j for j, val in enumerate(local) if val == sub]
+            fine_id = macro * 10000 + int(sub)
+            texts = [docs[ix[j]] for j in members]
+            keywords = ""
+            if len(texts) >= 3:
+                try:
+                    vec = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=1,
+                                          max_features=12).fit(texts)
+                    keywords = ", ".join(vec.get_feature_names_out()[:10])
+                except ValueError:
+                    pass
+            label = f"{base_label} · {'shared methods' if sub == 0 else 'subtopic ' + str(sub)}"
+            meta.append([fine_id, macro, label, len(members), keywords, "fine"])
+            rows.extend([[ids[ix[j]], fine_id] for j in members])
+    con.execute("DROP TABLE IF EXISTS fine_topic_meta")
+    con.execute("DROP TABLE IF EXISTS work_fine_cluster")
+    con.execute("CREATE TABLE fine_topic_meta(topic_id INT, parent_topic_id INT, label TEXT, size INT, keywords TEXT, kind TEXT)")
+    con.execute("CREATE TABLE work_fine_cluster(work_id TEXT, topic_id INT)")
+    con.executemany("INSERT INTO fine_topic_meta VALUES (?,?,?,?,?,?)", meta)
+    con.executemany("INSERT INTO work_fine_cluster VALUES (?,?)", rows)
+    print(f"fine topics: {len(meta)} ({len(rows)} assignments)")
 
 
 def fallback_openalex_topics(con) -> None:
@@ -46,6 +96,13 @@ def fallback_openalex_topics(con) -> None:
     for wid, topic in con.execute("SELECT id, topic FROM works WHERE topic IS NOT NULL").fetchall():
         clusters.append([wid, tid_map[topic]])
     write_tables(con, meta, clusters)
+    con.execute("DROP TABLE IF EXISTS fine_topic_meta")
+    con.execute("DROP TABLE IF EXISTS work_fine_cluster")
+    con.execute("CREATE TABLE fine_topic_meta(topic_id INT, parent_topic_id INT, label TEXT, size INT, keywords TEXT, kind TEXT)")
+    con.execute("CREATE TABLE work_fine_cluster(work_id TEXT, topic_id INT)")
+    fine_meta = [[m[0] * 10000, m[0], m[1], m[2], m[3], "fallback"] for m in meta]
+    con.executemany("INSERT INTO fine_topic_meta VALUES (?,?,?,?,?,?)", fine_meta)
+    con.executemany("INSERT INTO work_fine_cluster VALUES (?,?)", [[wid, tid * 10000] for wid, tid in clusters])
     print(f"  {len(meta)} OpenAlex topics, {len(clusters)} assignments")
 
 
@@ -91,6 +148,7 @@ def run_bertopic(con) -> None:
                      "outlier" if tid == -1 else "bertopic"])
     clusters = [[wid, int(t)] for wid, t in zip(ids, topics)]
     write_tables(con, meta, clusters)
+    write_fine_topics(con, ids, topics, emb, docs, {m[0]: m[1] for m in meta})
     n_topics = sum(1 for m in meta if m[0] != -1)
     print(f"BERTopic: {n_topics} topics ({len(clusters)} assignments)")
 

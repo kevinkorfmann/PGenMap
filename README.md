@@ -1,4 +1,4 @@
-# PGenMap — Mapping the Evolution of Population Genetics (1985–2025)
+# PGenMap — Mapping the Evolution of Population Genetics (1920–2026)
 
 **▶ Live interactive dashboard: https://kevinkorfmann.github.io/PGenMap/**
 · **Narrative report: [outputs/report.md](outputs/report.md)**
@@ -8,7 +8,7 @@ evolutionary-genomics** research community from bibliometric data and studies
 **how the field has changed over ~40 years** — its questions, its methods, and
 its social structure (labs and schools of thought).
 
-Built from **28,885 population-genetics papers** by **2,200 researchers**
+The checked-in snapshot contains **28,885 population-genetics papers** by **2,200 researchers**
 (Crossref), analysed into **52 topics**, **24 tracked methods**, **25
 co-authorship communities**, and **213,647 within-corpus citations**.
 
@@ -16,7 +16,9 @@ Starting from a seed of well-known researchers (Rasmus Nielsen, Yun Song,
 Aurélien Tellier, Matteo Fumagalli, the Mathiesons, Andrew Kern, Peter Ralph,
 John Novembre, …) the pipeline expands to **1500+ researchers** via topic
 crawling and co-authorship-network expansion, harvests their publications, and
-analyses the corpus along four time axes.
+analyses the corpus along four time axes. The next pipeline refresh expands the
+map to a century-scale 1920–2026 trajectory, with a separate founding-author
+seed set and historical terminology safeguards.
 
 ## Data source
 
@@ -71,7 +73,7 @@ bash run.sh
 
 ## Outputs
 
-- `outputs/report.md` — narrative "How Population Genetics Evolved, 1985–2025"
+- `outputs/report.md` — narrative report for the currently generated corpus
 - `outputs/figures/` — publication-quality figures
 - `outputs/dashboard.html` — self-contained interactive dashboard
 - `outputs/analysis.json` — compact aggregates behind the dashboard

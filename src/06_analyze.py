@@ -100,6 +100,28 @@ def topic_series(con, totals):
     return topics
 
 
+def fine_topic_series(con, totals):
+    """Compact drill-down summaries, present after the two-level topic stage."""
+    exists = con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='fine_topic_meta'").fetchone()[0]
+    if not exists:
+        return []
+    meta = {r[0]: r[1:] for r in con.execute(
+        "SELECT topic_id, parent_topic_id, label, size, keywords FROM fine_topic_meta").fetchall()}
+    by_topic = defaultdict(lambda: {y: 0 for y in YEARS})
+    for tid, year, n in con.execute("""
+        SELECT fc.topic_id, w.year, count(*) FROM work_fine_cluster fc
+        JOIN works w ON w.id=fc.work_id WHERE w.year BETWEEN ? AND ? GROUP BY fc.topic_id, w.year
+    """, [Y0, Y1]).fetchall():
+        by_topic[tid][year] = n
+    out = []
+    for tid, years in by_topic.items():
+        parent, label, size, keywords = meta.get(tid, (None, str(tid), sum(years.values()), ""))
+        out.append({"id": tid, "parent_id": parent, "label": label, "size": size,
+                    "keywords": keywords, "counts": [years[y] for y in YEARS],
+                    "share": [round(years[y] / totals[y], 4) if totals[y] else 0.0 for y in YEARS]})
+    return sorted(out, key=lambda t: t["size"], reverse=True)
+
+
 def researcher_cards(con):
     R = {r[0]: dict(id=r[0], name=r[1], inst=r[2], country=r[3], cites=r[4],
                     core=r[5], works=r[6], seed=r[7], community=r[8], degree=r[9])
@@ -180,6 +202,7 @@ def main() -> None:
 
     methods, m_counts, m_share = method_series(con, totals)
     topics = topic_series(con, totals)
+    fine_topics = fine_topic_series(con, totals)
     cards = researcher_cards(con)
     pivotal = pivotal_papers(con)
 
@@ -210,6 +233,7 @@ def main() -> None:
         "method_share": m_share,
         "method_milestones": method_milestones(methods, m_share),
         "topics": topics,
+        "fine_topics": fine_topics,
         "researchers": cards,
         "communities": net.get("communities", []),
         "network_snapshots": net.get("snapshots", []),
