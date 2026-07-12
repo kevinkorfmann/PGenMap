@@ -139,19 +139,25 @@ SEED_RESEARCHERS: list[tuple[str, str | None]] = [
 ]
 
 # --- Popgen topic / concept anchors (OpenAlex) -----------------------------
-# Verified live. Used both to seed discovery and to score relevance.
+# Verified live. CORE topics drive discovery crawling and the strict relevance
+# signal; the broader set adds weak, down-weighted signal only.
+CORE_POPGEN_TOPICS = [
+    "T10012",   # Genetic diversity and population structure
+    "T11764",   # Evolution and Genetic Dynamics
+]
 POPGEN_TOPIC_IDS = [
     "T10012",   # Genetic diversity and population structure
     "T11764",   # Evolution and Genetic Dynamics
     "T10261",   # Genetic Associations and Epidemiology (overlap; weighted low)
     "T10751",   # Forensic and Genetic Research (overlap; weighted low)
 ]
-# Topics whose overlap with popgen is partial -> down-weight in scoring.
+# Topics whose overlap with popgen is partial -> down-weight in scoring so that
+# high-volume clinical/forensic authors don't read as population geneticists.
 TOPIC_WEIGHTS = {
     "T10012": 1.0,
     "T11764": 1.0,
-    "T10261": 0.3,
-    "T10751": 0.3,
+    "T10261": 0.25,
+    "T10751": 0.25,
 }
 POPGEN_CONCEPT_IDS = [
     "C85721925",    # Population genetics

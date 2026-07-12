@@ -20,7 +20,7 @@ import config  # noqa: E402
 API = "https://api.openalex.org"
 UA = f"PGenMap/0.1 (mailto:{config.MAILTO})"
 _LAST_CALL = [0.0]
-MIN_INTERVAL = 0.11          # ~9 req/s, well under the 10/s polite ceiling
+MIN_INTERVAL = 0.15          # ~6-7 req/s, comfortably under the 10/s polite ceiling
 
 
 def _cache_path(url: str) -> str:
@@ -35,7 +35,7 @@ def _throttle() -> None:
     _LAST_CALL[0] = time.time()
 
 
-def get_json(url: str, use_cache: bool = True, retries: int = 5) -> dict:
+def get_json(url: str, use_cache: bool = True, retries: int = 9) -> dict:
     """GET a URL as JSON, caching the body to disk. Cached hits skip the network."""
     cp = _cache_path(url)
     if use_cache and os.path.exists(cp):
@@ -60,14 +60,20 @@ def get_json(url: str, use_cache: bool = True, retries: int = 5) -> dict:
         except urllib.error.HTTPError as e:
             last_err = e
             if e.code in (429, 500, 502, 503, 504):
-                time.sleep(min(2 ** attempt, 30))
+                # honor Retry-After when present; otherwise exponential backoff
+                ra = e.headers.get("Retry-After") if e.headers else None
+                try:
+                    wait = float(ra) if ra else min(3 * (2 ** attempt), 90)
+                except ValueError:
+                    wait = min(3 * (2 ** attempt), 90)
+                time.sleep(wait)
                 continue
             if e.code == 404:
                 return {}
             raise
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             last_err = e
-            time.sleep(min(2 ** attempt, 30))
+            time.sleep(min(3 * (2 ** attempt), 60))
     raise RuntimeError(f"GET failed after {retries} tries: {url} :: {last_err}")
 
 
