@@ -38,7 +38,9 @@ def tag_methods(con, df) -> None:
     con.execute("CREATE TABLE work_methods(work_id TEXT, method TEXT)")
     rows = []
     for wid, title, abstract in zip(df["id"], df["title"], df["abstract"]):
-        text = ((title or "") + " " + (abstract or "")).strip()
+        title = title if isinstance(title, str) else ""
+        abstract = abstract if isinstance(abstract, str) else ""
+        text = (title + " " + abstract).strip()
         if not text:
             continue
         for method, patterns in lex.items():
@@ -87,7 +89,9 @@ def embed(df) -> bool:
 
     texts, ids = [], []
     for wid, title, abstract in zip(df["id"], df["title"], df["abstract"]):
-        t = (title or "").strip()
+        title = title if isinstance(title, str) else ""
+        abstract = abstract if isinstance(abstract, str) else ""
+        t = title.strip()
         if abstract:
             t = (t + ". " + abstract).strip()
         texts.append(t if t else "untitled")

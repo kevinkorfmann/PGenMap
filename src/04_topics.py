@@ -61,7 +61,10 @@ def run_bertopic(con) -> None:
     print(f"loaded embeddings {emb.shape} for {len(ids)} works")
 
     df = con.execute("SELECT id, title, abstract FROM works").fetchdf()
-    text_by_id = {r.id: ((r.title or "") + ". " + (r.abstract or "")).strip()
+
+    def _s(x):
+        return x if isinstance(x, str) else ""
+    text_by_id = {r.id: (_s(r.title) + ". " + _s(r.abstract)).strip()
                   for r in df.itertuples()}
     docs = [text_by_id.get(i, "") or "untitled" for i in ids]
 
