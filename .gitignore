@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Data artifacts (large / regenerable) — kept local, not committed
+data/cache/
+*.duckdb
+*.duckdb.wal
+*.parquet
+data/embeddings.parquet
+
+# OS
+.DS_Store
+
+# Keep the outputs (report, figures, dashboard, analysis.json) tracked,
+# but not the intermediate raw dumps.

@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+src/openalex.py
+src/pgenmap.egg-info/PKG-INFO
+src/pgenmap.egg-info/SOURCES.txt
+src/pgenmap.egg-info/dependency_links.txt
+src/pgenmap.egg-info/requires.txt
+src/pgenmap.egg-info/top_level.txt
