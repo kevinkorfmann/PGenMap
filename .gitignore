@@ -7,6 +7,10 @@ venv/
 
 # Data artifacts (large / regenerable) — kept local, not committed
 data/cache/
+data/cache_cr/
+data/*.jsonl
+data/embeddings.npy
+data/emb_ids.json
 *.duckdb
 *.duckdb.wal
 *.parquet

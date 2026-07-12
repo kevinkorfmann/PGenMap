@@ -178,6 +178,45 @@ TOPIC_SEARCH_PHRASES = [
     "genome-wide association",
 ]
 
+# --- Crossref relevance anchors --------------------------------------------
+# Crossref has no topic labels, so popgen relevance is judged from the venue,
+# the title, and collaborator overlap. Specialist journals = strong signal.
+POPGEN_JOURNALS = [
+    "molecular biology and evolution", "genetics", "molecular ecology",
+    "heredity", "theoretical population biology", "plos genetics",
+    "genome research", "genome biology and evolution", "bmc evolutionary biology",
+    "evolution", "genetics selection evolution", "journal of heredity",
+    "conservation genetics", "molecular ecology resources", "genetical research",
+    "journal of molecular evolution", "systematic biology", "human genetics",
+    "european journal of human genetics", "american journal of human genetics",
+    "annual review of genetics", "annual review of genomics and human genetics",
+    "evolutionary applications", "genome biology", "peer community journal",
+    "molecular phylogenetics and evolution", "bmc genetics", "bmc genomics",
+    "g3", "g3 genes genomes genetics", "journal of evolutionary biology",
+    "evolution letters", "genes", "frontiers in genetics", "trends in genetics",
+    "nature ecology & evolution", "molecular ecology notes",
+]
+# Elite generalist venues: only count popgen when a second signal agrees.
+GENERAL_VENUES = [
+    "nature", "science", "proceedings of the national academy of sciences",
+    "cell", "elife", "nature communications", "current biology", "pnas",
+    "nucleic acids research", "bioinformatics", "gigascience", "plos one",
+    "scientific reports", "proceedings of the royal society b",
+]
+# Title keywords marking population-genetic / evolutionary-genomic content.
+POPGEN_TITLE_KEYWORDS = [
+    r"population genetic", r"popul\w+ structure", r"coalescent", r"natural selection",
+    r"selective sweep", r"\bselection\b", r"demograph", r"admixture", r"introgress",
+    r"ancient dna", r"ancestry", r"phylogen", r"molecular evolution", r"adaptation",
+    r"genetic diversity", r"genetic variation", r"polymorphism", r"recombination",
+    r"linkage disequilibrium", r"effective population size", r"gene flow",
+    r"speciation", r"positive selection", r"balancing selection", r"genome[- ]wide",
+    r"allele frequenc", r"site frequency", r"mutation rate", r"haplotype",
+    r"whole[- ]genome", r"nucleotide diversity", r"fst", r"heterozygosity",
+    r"quantitative genetic", r"heritability", r"genomic prediction", r"inbreeding",
+    r"hybridi", r"domestication", r"local adaptation", r"evolutionary genom",
+]
+
 # --- Method lexicon --------------------------------------------------------
 # canonical label -> list of case-insensitive regex alternatives.
 # Applied to (title + abstract). Word boundaries handled in enrich step.

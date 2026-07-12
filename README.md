@@ -11,16 +11,24 @@ John Novembre, …) the pipeline expands to **1500+ researchers** via topic
 crawling and co-authorship-network expansion, harvests their publications, and
 analyses the corpus along four time axes.
 
-## Why not Google Scholar?
+## Data source
 
-Google Scholar has **no API** and actively blocks scraping. This project is
-built on **[OpenAlex](https://openalex.org)** (primary) — a free, open scholarly
-database that returns *canonically disambiguated* authors with institutions,
-per-work year, topics, citations, reference lists, and reconstructable
-abstracts — with **Semantic Scholar** / **Crossref** as fallbacks. OpenAlex
-cleanly resolves the real Rasmus Nielsen (`A5088476239`, 79k citations); Google
-Scholar and Semantic Scholar's raw author search fragment him into dozens of
-"R. Nielsen" stubs.
+Google Scholar has **no API** and actively blocks scraping, so it is not usable
+as a backbone. The project was designed for **OpenAlex**, but mid-build OpenAlex
+moved to a **paid credit model** (the free tier now allows only ~100 requests
+before an 8-hour lockout) and Semantic Scholar's free tier began requiring an
+API key. The pipeline therefore harvests from **[Crossref](https://www.crossref.org)**,
+which is fully free and open with a generous polite pool.
+
+Crossref has no canonical author entities, so PGenMap builds researcher identity
+from a normalized `family-initial` key (ORCID tracked as metadata) and uses
+**venue + title-keyword relevance + collaborator overlap** to disambiguate — a
+population geneticist's papers appear in specialist journals (*Molecular Biology
+and Evolution*, *Genetics*, *Molecular Ecology*, *PLoS Genetics*, …) or carry
+population-genetic titles, which separates them from same-named authors in other
+fields. Trade-off vs. OpenAlex: thinner abstract coverage (so topic modelling
+leans more on titles) and coarser disambiguation. The stdlib OpenAlex client
+(`src/openalex.py`) remains in the repo for anyone with credits.
 
 ## The four time-axis analyses
 

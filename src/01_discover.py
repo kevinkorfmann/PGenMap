@@ -1,307 +1,211 @@
-"""Stage 1 — Discover the researcher universe.
+"""Stage 1 (Crossref) — Discover the researcher universe.
 
-Builds the population-genetics researcher set by (1) resolving seeds to
-canonical OpenAlex author IDs, (2) topic-crawling popgen topics for prolific
-authors, (3) expanding through seed co-authorship, then (4) scoring every
-candidate on popgen relevance + connectivity and keeping the top ~TARGET.
+Crossref has no canonical author entities, so we build the universe by
+co-authorship expansion from the seeds, keeping only population-genetics-
+relevant works (specialist venue OR popgen title keyword). Author identity is a
+normalized 'family-initial' key; ORCID is tracked as metadata.
 
-Writes data/researchers.jsonl (one JSON record per kept researcher).
-Resumable: every API call is disk-cached, so re-runs are near-instant.
+  hop 0: fetch each seed's popgen works -> co-author frequencies + seed links
+  hop 1: fetch the best-connected co-authors' popgen works -> expand the pool
+  select: score every candidate on popgen output + connectivity -> top TARGET
+
+Writes data/researchers.jsonl. Fully resumable (Crossref responses cached).
 """
 from __future__ import annotations
 import json
 import math
 import os
+import re
 import sys
+from collections import defaultdict, Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
-from src import openalex as oa
+from src import crossref as cr
 
-POPGEN_TOPICS = set(config.POPGEN_TOPIC_IDS)
-CORE_TOPICS = set(config.CORE_POPGEN_TOPICS)
-TOPIC_W = config.TOPIC_WEIGHTS
-POPGEN_CONCEPTS = set(config.POPGEN_CONCEPT_IDS)
 OUT_PATH = os.path.join(config.DATA, "researchers.jsonl")
+KW = [re.compile(k, re.IGNORECASE) for k in config.POPGEN_TITLE_KEYWORDS]
+SPECIALIST = [j.lower() for j in config.POPGEN_JOURNALS]
 
-# Relevance / filtering knobs (all in terms of CORE popgen-topic works) -------
-MIN_POPGEN_WORKS = 3        # core popgen works to qualify with a share test
-MIN_POPGEN_SHARE = 0.05     # ...and at least this fraction of the author's output
-STRONG_POPGEN_WORKS = 6     # unconditional keep threshold
-SEED_COAUTHOR_HOPS = 1      # network expansion depth from seeds
-AUTHOR_BATCH = 50
-
-
-def author_short(a: dict) -> str | None:
-    return oa.short_id(a.get("id"))
+SEED_MAX_WORKS = 800
+HOP1_MAX_WORKS = 400
+HOP1_AUTHORS = 650          # how many co-authors to expand in hop 1
+MIN_POPGEN_WORKS = 3
+TARGET = config.TARGET_UNIVERSE
 
 
-def popgen_work_count(author: dict) -> float:
-    """Weighted sum of the author's work counts in popgen topics (broad set)."""
-    n = 0.0
-    for t in author.get("topics", []) or []:
-        tid = oa.short_id(t.get("id"))
-        if tid in POPGEN_TOPICS:
-            n += int(t.get("count", 0)) * TOPIC_W.get(tid, 1.0)
-    for c in author.get("x_concepts", []) or []:
-        if oa.short_id(c.get("id")) in POPGEN_CONCEPTS and c.get("score", 0) >= 40:
-            n += 2
-    return n
+def popgen_relevance(item) -> int:
+    """0 = not relevant; >=1 relevant (specialist venue or popgen title kw)."""
+    score = 0
+    venue = (cr.container(item) or "").lower()
+    if any(j in venue for j in SPECIALIST):
+        score += 2
+    title = (cr.title_of(item) or "")
+    if title and any(k.search(title) for k in KW):
+        score += 1
+    return score
 
 
-def popgen_core_count(author: dict) -> int:
-    """Work count in the two CORE popgen topics only — the strict signal that
-    separates real population geneticists from clinical/forensic namesakes."""
-    n = 0
-    for t in author.get("topics", []) or []:
-        if oa.short_id(t.get("id")) in CORE_TOPICS:
-            n += int(t.get("count", 0))
-    return n
-
-
-def institution_names(author: dict) -> list[str]:
+def author_keys(item):
+    """Return list of (key, orcid, given, family, affil) for a work's authors."""
     out = []
-    for inst in author.get("last_known_institutions", []) or []:
-        if inst.get("display_name"):
-            out.append(inst["display_name"])
-    for aff in author.get("affiliations", []) or []:
-        nm = (aff.get("institution") or {}).get("display_name")
-        if nm:
-            out.append(nm)
-    return out
-
-
-def primary_field(author: dict) -> str | None:
-    topics = author.get("topics", []) or []
-    if topics:
-        return (topics[0].get("field") or {}).get("display_name")
-    return None
-
-
-# --- 1. seed resolution ------------------------------------------------------
-
-def resolve_seed(name: str, hint: str | None) -> tuple[dict | None, float]:
-    data = oa.get("authors", {"filter": f"display_name.search:{name}", "per-page": 50})
-    best, best_score, best_hit = None, -1.0, 0.0
-    for cand in data.get("results", []):
-        core = popgen_core_count(cand)
-        wc = max(cand.get("works_count", 0), 1)
-        core_share = core / wc
-        insts = " ; ".join(institution_names(cand)).lower()
-        hit = 1.0 if (hint and hint.lower() in insts) else 0.0
-        cites = cand.get("cited_by_count", 0)
-        # Rank on core popgen output, its *concentration*, and institution match.
-        # Citations count only when core popgen output is well-concentrated, so a
-        # high-citation clinical namesake with a few incidental popgen papers
-        # cannot win on citations alone.
-        cite_credit = math.log10(cites + 1) * 2.0 if (core >= 3 and core_share >= 0.02) else 0.0
-        score = core * 3.0 + core_share * 100.0 + hit * 150.0 + cite_credit
-        if score > best_score:
-            best, best_score, best_hit = cand, score, hit
-    if best is None:
-        return None, 0.0
-    core = popgen_core_count(best)
-    core_share = core / max(best.get("works_count", 0), 1)
-    # Keep only with real corroboration: an institution-hint match, or genuine
-    # *concentrated* core popgen output. A tiny popgen share on a huge clinical
-    # output (e.g. 4 popgen papers among 3000) is a wrong same-name author.
-    if best_hit == 0.0 and not (core >= 3 and core_share >= 0.02):
-        return None, 0.0
-    conf = (0.5 if best_hit else 0.0) + (0.5 if (core >= 3 and core_share >= 0.02) else 0.0)
-    return best, conf
-
-
-# --- 2. topic crawl ----------------------------------------------------------
-
-def discover_topic_ids() -> list[str]:
-    ids = list(config.CORE_POPGEN_TOPICS)
-    for phrase in config.TOPIC_SEARCH_PHRASES:
-        data = oa.get("topics", {"search": phrase, "per-page": 6})
-        for t in data.get("results", []):
-            field = (t.get("field") or {}).get("display_name", "")
-            if field in ("Biochemistry, Genetics and Molecular Biology",
-                         "Agricultural and Biological Sciences",
-                         "Immunology and Microbiology"):
-                tid = oa.short_id(t.get("id"))
-                if tid and tid not in ids and t.get("works_count", 0) > 3000:
-                    ids.append(tid)
-    return ids
-
-
-def topic_authors(topic_id: str, top: int = 200) -> dict[str, int]:
-    """Top authors in a topic via group_by; returns {author_id: work_count}."""
-    data = oa.get("works", {
-        "filter": f"primary_topic.id:{topic_id},from_publication_date:{config.YEAR_MIN}-01-01",
-        "group_by": "authorships.author.id",
-        "per-page": top,
-    })
-    out = {}
-    for g in data.get("group_by", []):
-        aid = oa.short_id(g.get("key"))
-        if aid and aid.startswith("A"):
-            out[aid] = int(g.get("count", 0))
-    return out
-
-
-# --- 3. network expansion ----------------------------------------------------
-
-def seed_coauthors(author_id: str, max_works: int = 400) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    n = 0
-    for w in oa.paginate("works",
-                         {"filter": f"author.id:{author_id}",
-                          "select": "id,authorships"},
-                         per_page=200, max_pages=max(1, max_works // 200)):
-        for a in w.get("authorships", []) or []:
-            cid = oa.short_id((a.get("author") or {}).get("id"))
-            if cid and cid != author_id:
-                counts[cid] = counts.get(cid, 0) + 1
-        n += 1
-        if n >= max_works:
-            break
-    return counts
-
-
-# --- 4. batch author records + scoring --------------------------------------
-
-def fetch_authors(ids: list[str]) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for i in range(0, len(ids), AUTHOR_BATCH):
-        chunk = ids[i:i + AUTHOR_BATCH]
-        data = oa.get("authors", {
-            "filter": "ids.openalex:" + "|".join(chunk),
-            "per-page": AUTHOR_BATCH,
-        })
-        for a in data.get("results", []):
-            sid = author_short(a)
-            if sid:
-                out[sid] = a
-    return out
-
-
-def main() -> None:
-    os.makedirs(config.DATA, exist_ok=True)
-    print("== Stage 1: discovery ==", flush=True)
-
-    # 1. seeds
-    seeds: dict[str, dict] = {}
-    seed_conf: dict[str, float] = {}
-    print(f"resolving {len(config.SEED_RESEARCHERS)} seeds...", flush=True)
-    for name, hint in config.SEED_RESEARCHERS:
-        a, conf = resolve_seed(name, hint)
-        if a:
-            sid = author_short(a)
-            seeds[sid] = a
-            seed_conf[sid] = conf
-            flag = "" if conf >= 0.5 else "  <-- low confidence"
-            print(f"  {name:32s} -> {sid} {a.get('display_name')} "
-                  f"({institution_names(a)[:1]}) cites={a.get('cited_by_count')}{flag}", flush=True)
-    print(f"resolved {len(seeds)} unique seed authors", flush=True)
-
-    # 2. topic crawl
-    topic_ids = discover_topic_ids()
-    print(f"crawling {len(topic_ids)} popgen topics: {topic_ids}", flush=True)
-    topic_hits: dict[str, int] = {}
-    for tid in topic_ids:
-        ta = topic_authors(tid)
-        for aid, cnt in ta.items():
-            topic_hits[aid] = topic_hits.get(aid, 0) + cnt
-        print(f"  {tid}: +{len(ta)} authors", flush=True)
-    print(f"topic crawl surfaced {len(topic_hits)} candidate authors", flush=True)
-
-    # 3. network expansion from seeds
-    coauthor_hits: dict[str, int] = {}
-    coauthor_seedlinks: dict[str, set] = {}
-    print(f"expanding co-author network (hop {SEED_COAUTHOR_HOPS}) from seeds...", flush=True)
-    for sid in seeds:
-        cos = seed_coauthors(sid)
-        for cid, cnt in cos.items():
-            coauthor_hits[cid] = coauthor_hits.get(cid, 0) + cnt
-            coauthor_seedlinks.setdefault(cid, set()).add(sid)
-    print(f"co-author expansion surfaced {len(coauthor_hits)} candidates", flush=True)
-
-    # union candidate pool
-    candidate_ids = set(seeds) | set(topic_hits) | set(coauthor_hits)
-    print(f"total candidate pool: {len(candidate_ids)}", flush=True)
-
-    # 4. fetch full records for candidates not already loaded
-    need = [c for c in candidate_ids if c not in seeds]
-    print(f"fetching {len(need)} candidate author records...", flush=True)
-    records = dict(seeds)
-    records.update(fetch_authors(need))
-    print(f"have {len(records)} author records", flush=True)
-
-    # 5. score + filter (centered on CORE popgen output to keep the corpus clean)
-    kept = []
-    for aid, a in records.items():
-        pg = popgen_work_count(a)          # weighted broad signal (for scoring)
-        core = popgen_core_count(a)        # strict core-topic signal (for keep gate)
-        wc = max(a.get("works_count", 0), 1)
-        share = pg / wc
-        share_core = core / wc
-        seedlinks = len(coauthor_seedlinks.get(aid, set()))
-        is_seed = aid in seeds
-        field = primary_field(a)
-        life_sci = field in ("Biochemistry, Genetics and Molecular Biology",
-                             "Agricultural and Biological Sciences",
-                             "Immunology and Microbiology",
-                             "Medicine", None)
-        keep = (
-            is_seed
-            or core >= STRONG_POPGEN_WORKS
-            or (core >= MIN_POPGEN_WORKS and share_core >= MIN_POPGEN_SHARE)
-            or (seedlinks >= 2 and core >= 1)
-        )
-        if not keep or not life_sci:
+    for a in item.get("author", []) or []:
+        k = cr.norm_name(a.get("given"), a.get("family"))
+        if not k:
             continue
-        cites = a.get("cited_by_count", 0)
-        stats = a.get("summary_stats", {}) or {}
-        score = core * (0.5 + share_core) + math.log10(cites + 1) * 2 + seedlinks
-        counts_by_year = a.get("counts_by_year", []) or []
-        years = [c["year"] for c in counts_by_year if c.get("works_count", 0) > 0]
-        kept.append({
-            "id": aid,
-            "name": a.get("display_name"),
-            "orcid": a.get("orcid"),
-            "institutions": institution_names(a)[:3],
-            "country": next((i.get("country_code") for i in
-                             (a.get("last_known_institutions") or []) if i.get("country_code")), None),
-            "works_count": a.get("works_count", 0),
-            "cited_by_count": cites,
-            "h_index": stats.get("h_index"),
-            "field": field,
-            "popgen_works": round(pg, 1),
-            "popgen_core": core,
-            "popgen_share": round(share, 3),
+        affil = ""
+        aff = a.get("affiliation") or []
+        if aff and isinstance(aff, list) and aff[0].get("name"):
+            affil = aff[0]["name"]
+        out.append((k, cr.orcid_of(a), a.get("given"), a.get("family"), affil))
+    return out
+
+
+class Universe:
+    def __init__(self):
+        self.popgen_works = Counter()      # key -> # popgen works seen (processed authors)
+        self.coauthor_freq = Counter()     # key -> co-occurrences in popgen works
+        self.seed_links = defaultdict(set) # key -> set of seed keys co-authored with
+        self.orcids = defaultdict(Counter)
+        self.names = defaultdict(Counter)
+        self.affils = defaultdict(Counter)
+        self.cites = Counter()             # provisional: sum is-referenced-by-count
+        self.years = defaultdict(list)
+        self.seeds = set()
+        self.processed = set()
+
+    def record_author(self, k, orcid, given, family, affil):
+        if orcid:
+            self.orcids[k][orcid] += 1
+        nm = " ".join(x for x in [given, family] if x)
+        if nm:
+            self.names[k][nm] += 1
+        if affil:
+            self.affils[k][affil] += 1
+
+    def process(self, query_name, target_key, is_seed):
+        """Fetch target's popgen works via Crossref; update stats + expand co-authors."""
+        if target_key in self.processed:
+            return
+        self.processed.add(target_key)
+        maxw = SEED_MAX_WORKS if is_seed else HOP1_MAX_WORKS
+        n = 0
+        for item in cr.paginate_works(
+                {"query.author": query_name,
+                 "filter": f"from-pub-date:{config.YEAR_MIN}-01-01,until-pub-date:{config.YEAR_MAX}-12-31,type:journal-article"},
+                max_items=maxw):
+            ak = author_keys(item)
+            keys = {k for k, *_ in ak}
+            if target_key not in keys:
+                continue                    # fuzzy query matched a non-author
+            if popgen_relevance(item) < 1:
+                continue                    # not popgen -> disambiguation gate
+            n += 1
+            self.popgen_works[target_key] += 1
+            yr = cr.work_year(item)
+            if yr:
+                self.years[target_key].append(yr)
+            for k, orcid, given, family, affil in ak:
+                self.record_author(k, orcid, given, family, affil)
+                self.cites[k] += item.get("is-referenced-by-count", 0) or 0
+                if k == target_key:
+                    continue
+                self.coauthor_freq[k] += 1
+                if is_seed:
+                    self.seed_links[k].add(target_key)
+        return n
+
+
+def resolve_seed_query(name):
+    """Config seed 'Given Family' -> (query string, normalized key)."""
+    parts = name.replace(".", " ").split()
+    given = parts[0] if parts else ""
+    family = parts[-1] if len(parts) > 1 else parts[0]
+    key = cr.norm_name(given, family)
+    return name, key
+
+
+def main():
+    os.makedirs(config.DATA, exist_ok=True)
+    U = Universe()
+    print("== Stage 1 (Crossref): discovery ==", flush=True)
+
+    # hop 0: seeds
+    seed_keys = {}
+    for disp, hint in config.SEED_RESEARCHERS:
+        q, key = resolve_seed_query(disp)
+        seed_keys[key] = disp
+    U.seeds = set(seed_keys)
+    print(f"processing {len(seed_keys)} seeds (hop 0)...", flush=True)
+    for i, (key, disp) in enumerate(seed_keys.items(), 1):
+        got = U.process(disp, key, is_seed=True)
+        U.record_author(key, None, disp.split()[0], disp.split()[-1], "")
+        if i % 15 == 0 or (got or 0) == 0:
+            print(f"  [{i}/{len(seed_keys)}] {disp}: {got} popgen works", flush=True)
+
+    # hop 1: expand best-connected co-authors
+    cand = [(k, len(U.seed_links[k]), U.coauthor_freq[k])
+            for k in U.coauthor_freq if k not in U.seeds]
+    cand.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    hop1 = [k for k, links, freq in cand if links >= 1][:HOP1_AUTHORS]
+    print(f"expanding {len(hop1)} co-authors (hop 1)...", flush=True)
+    for i, k in enumerate(hop1, 1):
+        disp = U.names[k].most_common(1)[0][0] if U.names[k] else k
+        U.process(disp, k, is_seed=False)
+        if i % 50 == 0:
+            print(f"  [{i}/{len(hop1)}] processed (pool now {len(U.coauthor_freq)})", flush=True)
+
+    # select universe
+    all_keys = set(U.popgen_works) | set(U.coauthor_freq) | U.seeds
+    rows = []
+    for k in all_keys:
+        pw = U.popgen_works[k]
+        links = len(U.seed_links[k])
+        freq = U.coauthor_freq[k]
+        is_seed = k in U.seeds
+        keep = is_seed or pw >= MIN_POPGEN_WORKS or links >= 2 or freq >= 6
+        if not keep:
+            continue
+        score = pw * 1.5 + links * 3 + math.log10(U.cites[k] + 1) * 2 + min(freq, 40) * 0.3
+        yrs = U.years.get(k, [])
+        rows.append({
+            "id": k,
+            "name": (U.names[k].most_common(1)[0][0] if U.names[k] else k),
+            "orcid": (U.orcids[k].most_common(1)[0][0] if U.orcids[k] else None),
+            "institutions": [a for a, _ in U.affils[k].most_common(3)],
+            "country": None,
+            "works_count": pw,               # provisional; build_db recomputes
+            "cited_by_count": U.cites[k],     # provisional
+            "h_index": None,
+            "field": None,
+            "popgen_works": pw,
+            "popgen_core": pw,
+            "popgen_share": None,
             "seed": is_seed,
-            "seed_conf": round(seed_conf.get(aid, 0.0), 2) if is_seed else None,
-            "seed_links": seedlinks,
-            "recent_year": max(years) if years else None,
-            "top_topics": [t.get("display_name") for t in (a.get("topics") or [])[:5]],
+            "seed_links": links,
+            "recent_year": max(yrs) if yrs else None,
+            "top_topics": [],
             "score": round(score, 2),
-            "provenance": (["seed"] if is_seed else [])
-                          + (["topic"] if aid in topic_hits else [])
-                          + (["network"] if aid in coauthor_hits else []),
+            "provenance": (["seed"] if is_seed else []) +
+                          (["processed"] if k in U.processed else ["coauthor"]),
         })
 
-    kept.sort(key=lambda r: r["score"], reverse=True)
-    if len(kept) > config.TARGET_UNIVERSE:
-        # always keep seeds even if beyond the cap
-        seed_rows = [r for r in kept if r["seed"]]
-        rest = [r for r in kept if not r["seed"]][: config.TARGET_UNIVERSE - len(seed_rows)]
-        kept = seed_rows + rest
-        kept.sort(key=lambda r: r["score"], reverse=True)
+    rows.sort(key=lambda r: r["score"], reverse=True)
+    if len(rows) > TARGET:
+        seeds = [r for r in rows if r["seed"]]
+        rest = [r for r in rows if not r["seed"]][:TARGET - len(seeds)]
+        rows = sorted(seeds + rest, key=lambda r: r["score"], reverse=True)
 
     with open(OUT_PATH, "w") as fh:
-        for r in kept:
+        for r in rows:
             fh.write(json.dumps(r) + "\n")
 
-    n_seed = sum(1 for r in kept if r["seed"])
-    print(f"\nKEPT {len(kept)} researchers ({n_seed} seeds) -> {OUT_PATH}", flush=True)
+    n_seed = sum(1 for r in rows if r["seed"])
+    print(f"\nKEPT {len(rows)} researchers ({n_seed} seeds) -> {OUT_PATH}", flush=True)
     print("Top 15 by score:", flush=True)
-    for r in kept[:15]:
-        print(f"  {r['score']:7.1f}  {r['name']:28s}  pg={r['popgen_works']:4d} "
-              f"cites={r['cited_by_count']:>8d}  {r['institutions'][:1]}", flush=True)
+    for r in rows[:15]:
+        print(f"  {r['score']:7.1f}  {r['name']:28s}  popgen_works={r['popgen_works']:4d} "
+              f"links={r['seed_links']}  {r['institutions'][:1]}", flush=True)
 
 
 if __name__ == "__main__":

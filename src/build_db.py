@@ -97,6 +97,18 @@ def main() -> None:
         con.executemany("INSERT INTO work_topics VALUES (?,?)", wt_rows)
     print(f"works: {n}")
 
+    # recompute accurate per-researcher stats from the harvested corpus
+    con.execute("""
+        UPDATE researchers SET
+          works_count = COALESCE((SELECT count(DISTINCT a.work_id) FROM authorship a
+                                  WHERE a.author_id = researchers.id), 0),
+          cited_by_count = COALESCE((SELECT sum(w.cited_by) FROM authorship a
+                                     JOIN works w ON a.work_id = w.id
+                                     WHERE a.author_id = researchers.id), 0),
+          recent_year = (SELECT max(w.year) FROM authorship a JOIN works w ON a.work_id = w.id
+                         WHERE a.author_id = researchers.id)
+    """)
+
     # --- citations (restricted to corpus) ---
     con.execute("CREATE TABLE citations(src TEXT, dst TEXT)")
     refs_path = os.path.join(DATA, "refs.jsonl")

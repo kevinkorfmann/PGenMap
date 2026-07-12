@@ -1,33 +1,71 @@
-"""Stage 2 — Harvest publications for the researcher universe.
+"""Stage 2 (Crossref) — Harvest publications for the researcher universe.
 
-Reads data/researchers.jsonl, pulls every work for each author (cursor
-paginated, disk-cached), dedupes by work id, and writes:
+For each universe member, fetch all their population-genetics-relevant works
+from Crossref (same relevance gate as discovery), attribute authors by
+normalized key, dedupe by DOI, and write:
   data/works.jsonl  — one record per unique work (metadata, authorships, abstract)
-  data/refs.jsonl   — one record per work: {id, refs:[work ids]} for the citation graph
+  data/refs.jsonl   — {id, refs:[DOIs]} for the in-corpus citation graph
 
-Resumable: OpenAlex responses are cached, so re-runs replay from disk quickly.
+Resumable: Crossref responses are cached, and re-runs replay from disk.
 """
 from __future__ import annotations
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
-from src import openalex as oa
+from src import crossref as cr
 
 RESEARCHERS = os.path.join(config.DATA, "researchers.jsonl")
 WORKS_OUT = os.path.join(config.DATA, "works.jsonl")
 REFS_OUT = os.path.join(config.DATA, "refs.jsonl")
-
-SELECT = ",".join([
-    "id", "doi", "title", "publication_year", "publication_date", "type",
-    "cited_by_count", "fwci", "primary_topic", "topics", "authorships",
-    "referenced_works", "abstract_inverted_index", "primary_location",
-])
+KW = [re.compile(k, re.IGNORECASE) for k in config.POPGEN_TITLE_KEYWORDS]
+SPECIALIST = [j.lower() for j in config.POPGEN_JOURNALS]
+MAX_WORKS = 1200
 
 
-def load_universe() -> list[dict]:
+def popgen_relevance(item) -> int:
+    score = 0
+    venue = (cr.container(item) or "").lower()
+    if any(j in venue for j in SPECIALIST):
+        score += 2
+    title = cr.title_of(item) or ""
+    if title and any(k.search(title) for k in KW):
+        score += 1
+    return score
+
+
+def compact_authorships(item):
+    out = []
+    for i, a in enumerate(item.get("author", []) or []):
+        k = cr.norm_name(a.get("given"), a.get("family"))
+        if not k:
+            continue
+        insts = []
+        for aff in (a.get("affiliation") or []):
+            if aff.get("name"):
+                insts.append({"id": None, "name": aff["name"], "country": None})
+        seq = a.get("sequence")
+        pos = "first" if seq == "first" else "middle"
+        out.append({"id": k, "name": " ".join(x for x in [a.get("given"), a.get("family")] if x),
+                    "pos": pos, "insts": insts})
+    if out:
+        out[-1]["pos"] = "last" if len(out) > 1 else out[-1]["pos"]
+    return out
+
+
+def ref_dois(item):
+    dois = []
+    for r in (item.get("reference") or []):
+        d = r.get("DOI")
+        if d:
+            dois.append(d.lower())
+    return dois
+
+
+def load_universe():
     rows = []
     with open(RESEARCHERS) as fh:
         for line in fh:
@@ -35,77 +73,54 @@ def load_universe() -> list[dict]:
     return rows
 
 
-def compact_authorships(w: dict) -> list[dict]:
-    out = []
-    for a in w.get("authorships", []) or []:
-        aid = oa.short_id((a.get("author") or {}).get("id"))
-        if not aid:
-            continue
-        insts = []
-        for inst in a.get("institutions", []) or []:
-            if inst.get("display_name"):
-                insts.append({"id": oa.short_id(inst.get("id")),
-                              "name": inst.get("display_name"),
-                              "country": inst.get("country_code")})
-        out.append({
-            "id": aid,
-            "name": (a.get("author") or {}).get("display_name"),
-            "pos": a.get("author_position"),
-            "insts": insts,
-        })
-    return out
-
-
-def venue_name(w: dict) -> str | None:
-    loc = w.get("primary_location") or {}
-    src = loc.get("source") or {}
-    return src.get("display_name")
-
-
-def main() -> None:
+def main():
     universe = load_universe()
-    ids = [r["id"] for r in universe]
-    print(f"== Stage 2: harvest works for {len(ids)} researchers ==", flush=True)
+    print(f"== Stage 2 (Crossref): harvest works for {len(universe)} researchers ==", flush=True)
 
-    seen: set[str] = set()
+    seen = set()
     n_authors = 0
     with open(WORKS_OUT, "w") as wf, open(REFS_OUT, "w") as rf:
-        for aid in ids:
+        for r in universe:
             n_authors += 1
+            key = r["id"]
+            query = r["name"] if r.get("name") else key
             got = 0
-            for w in oa.paginate("works",
-                                 {"filter": f"author.id:{aid}", "select": SELECT},
-                                 per_page=200):
-                wid = oa.short_id(w.get("id"))
-                if not wid or wid in seen:
+            for item in cr.paginate_works(
+                    {"query.author": query,
+                     "filter": f"from-pub-date:{config.YEAR_MIN}-01-01,"
+                               f"until-pub-date:{config.YEAR_MAX}-12-31,type:journal-article"},
+                    max_items=MAX_WORKS):
+                ak = {cr.norm_name(a.get("given"), a.get("family")) for a in item.get("author", []) or []}
+                if key not in ak:
                     continue
-                seen.add(wid)
+                if popgen_relevance(item) < 1:
+                    continue
+                doi = (item.get("DOI") or "").lower()
+                if not doi or doi in seen:
+                    continue
+                seen.add(doi)
                 got += 1
-                pt = w.get("primary_topic") or {}
                 rec = {
-                    "id": wid,
-                    "doi": w.get("doi"),
-                    "title": w.get("title"),
-                    "year": w.get("publication_year"),
-                    "date": w.get("publication_date"),
-                    "type": w.get("type"),
-                    "cited_by": w.get("cited_by_count", 0),
-                    "fwci": w.get("fwci"),
-                    "venue": venue_name(w),
-                    "topic": oa.short_id(pt.get("id")),
-                    "topic_name": pt.get("display_name"),
-                    "subfield": (pt.get("subfield") or {}).get("display_name"),
-                    "field": (pt.get("field") or {}).get("display_name"),
-                    "topic_ids": [oa.short_id(t.get("id")) for t in (w.get("topics") or [])],
-                    "authorships": compact_authorships(w),
-                    "abstract": oa.reconstruct_abstract(w.get("abstract_inverted_index")),
+                    "id": doi,
+                    "doi": doi,
+                    "title": cr.title_of(item),
+                    "year": cr.work_year(item),
+                    "date": None,
+                    "type": item.get("type"),
+                    "cited_by": item.get("is-referenced-by-count", 0) or 0,
+                    "fwci": None,
+                    "venue": cr.container(item),
+                    "topic": None, "topic_name": None, "subfield": None, "field": None,
+                    "topic_ids": [],
+                    "authorships": compact_authorships(item),
+                    "abstract": cr.clean_abstract(item.get("abstract")),
                 }
                 wf.write(json.dumps(rec) + "\n")
-                refs = [oa.short_id(x) for x in (w.get("referenced_works") or [])]
+                refs = ref_dois(item)
                 if refs:
-                    rf.write(json.dumps({"id": wid, "refs": refs}) + "\n")
-            if n_authors % 50 == 0 or got == 0:
-                print(f"  [{n_authors}/{len(ids)}] {aid}: +{got} works "
+                    rf.write(json.dumps({"id": doi, "refs": refs}) + "\n")
+            if n_authors % 50 == 0:
+                print(f"  [{n_authors}/{len(universe)}] {r['name']}: +{got} "
                       f"(total unique {len(seen)})", flush=True)
 
     print(f"\nHarvest done: {len(seen)} unique works -> {WORKS_OUT}", flush=True)
