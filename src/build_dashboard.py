@@ -143,24 +143,54 @@ def compact_for_page(ctx):
     return out
 
 
-def render(payload):
+FIGURE_META = [
+    ("umap_topics.png", "Semantic map of the corpus",
+     "A 2D UMAP of every paper's abstract embedding; nearby papers read similarly, and the 14 largest topics are coloured and labelled.", True),
+    ("method_heatmap.png", "Method prevalence heatmap",
+     "Every tracked method as a share of yearly papers — the field's changing vocabulary at a glance.", True),
+    ("method_adoption.png", "Method adoption over time",
+     "Signature methods as a share of yearly output — the coalescent rises throughout; clustering, sequencing, ancient DNA and deep learning arrive in waves.", False),
+    ("topic_streamgraph.png", "Topic evolution",
+     "The twelve largest themes as a share of yearly output.", False),
+    ("growth.png", "Corpus growth, 1985–2025",
+     "Population-genetics papers per year in the mapped corpus.", False),
+    ("community_sizes.png", "Schools of thought",
+     "The largest co-authorship communities, labelled by their distinctive method and a notable member.", False),
+]
+
+
+def figures_present():
+    figdir = os.path.join(DOCS, "figures")
+    out = []
+    for fn, title, cap, wide in FIGURE_META:
+        if os.path.exists(os.path.join(figdir, fn)):
+            out.append({"file": fn, "title": title, "caption": cap, "wide": wide})
+    return out
+
+
+def render(payload, template):
     data_json = json.dumps(payload, separators=(",", ":"))
-    return HTML_TEMPLATE.replace("/*__DATA__*/", data_json)
+    return template.replace("/*__DATA__*/", data_json)
 
 
 def main():
     ctx = load_context()
     payload = compact_for_page(ctx)
+    payload["figures"] = figures_present()
     os.makedirs(DOCS, exist_ok=True)
-    html = render(payload)
+    main_html = render(payload, MAIN_TEMPLATE)
+    sci_html = render(payload, SCIENTISTS_TEMPLATE)
     with open(os.path.join(DOCS, "index.html"), "w") as fh:
-        fh.write(html)
-    size = len(html) / 1024
-    print(f"dashboard -> docs/index.html  (stage={payload['stage']}, {size:.0f} KB)")
+        fh.write(main_html)
+    with open(os.path.join(DOCS, "scientists.html"), "w") as fh:
+        fh.write(sci_html)
+    print(f"dashboard -> docs/index.html ({len(main_html)//1024} KB) + "
+          f"docs/scientists.html ({len(sci_html)//1024} KB)  "
+          f"stage={payload['stage']}, figures={len(payload['figures'])}")
 
 
-# The page template lives in a sibling module string to keep this file readable.
-from dashboard_template import HTML_TEMPLATE  # noqa: E402
+# The page templates live in a sibling module to keep this file readable.
+from dashboard_template import MAIN_TEMPLATE, SCIENTISTS_TEMPLATE  # noqa: E402
 
 if __name__ == "__main__":
     main()

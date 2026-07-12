@@ -30,6 +30,13 @@ whose title or abstract mentions a method; they track attention and vocabulary,
 not a census of techniques. With those caveats, the temporal patterns are
 strikingly coherent — and they line up with the field's lived history.
 
+![Semantic map of the corpus: a 2D UMAP of every paper's abstract embedding, coloured by topic](figures/umap_topics.png)
+
+*A semantic map of all 28,885 papers (UMAP of abstract embeddings). Model-organism
+genetics — Drosophila, Arabidopsis, yeast, maize — occupies one region; non-model
+and pathogen work (fish, birds, viruses, bacteria) spreads across others; and
+phylogenetics and population-selection theory anchor their own territories.*
+
 ## The field widened faster than it grew
 
 The most basic signal is expansion. Annual output in the corpus climbs from
@@ -52,6 +59,8 @@ genomic scale, and genome-wide association. In one sentence: population genetics
 stopped being a discipline practised mostly on a handful of laboratory species
 and became a way of reading the genomes of anything that has one — wild
 vertebrates, pathogens, crops, and ourselves.
+
+![Topic evolution — the twelve largest themes over time](figures/topic_streamgraph.png)
 
 ## The methodological arc
 
@@ -93,6 +102,10 @@ decade. Together they mark population genetics acquiring, for the first time, a
 native simulation-and-inference stack built for genome-scale data and a
 machine-learning idiom to go with it.
 
+![Method adoption over time](figures/method_adoption.png)
+
+![Method prevalence heatmap](figures/method_heatmap.png)
+
 Smaller methods punctuate the story rather than dominate it: approximate
 Bayesian computation flares in the late 2000s and recedes; selection scans
 (iHS, XP-EHH and kin) climb to 2.6%; the site-frequency-spectrum vocabulary
@@ -132,6 +145,8 @@ around Jérôme Goudet is characterised by approximate Bayesian computation and
 conservation genomics. The social structure of the field, read blind from who
 writes with whom, reconstructs the intellectual structure that practitioners
 would recognise.
+
+![Schools of thought — the largest co-authorship communities](figures/community_sizes.png)
 
 ## What changed, in one paragraph
 

@@ -24,7 +24,14 @@ $PY src/04_topics.py
 echo "[6/7] collaboration network"
 $PY src/05_network.py
 
-echo "[7/7] analyze + export analysis.json"
+echo "[7/9] analyze + export analysis.json"
 $PY src/06_analyze.py
 
-echo "done. outputs/ has analysis.json, network.json; build the dashboard next."
+echo "[8/9] figures (UMAP + method/topic/growth/community plots)"
+$PY src/07_figures.py
+
+echo "[9/9] build dashboard pages (docs/index.html + docs/scientists.html)"
+$PY src/build_dashboard.py
+
+echo "done. outputs/ has analysis.json, network.json, figures/, report.md;"
+echo "docs/ has the GitHub Pages dashboard."
