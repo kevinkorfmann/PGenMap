@@ -103,16 +103,29 @@ def main() -> None:
                     [comm_of.get(aid), int(deg.get(aid, 0)), float(btw.get(aid, 0.0)), aid])
 
     # community profiles: dominant institutions, methods, topics, top members
+    # global method rates, so community fingerprints show *distinctive* methods
+    # (enriched vs the field baseline) rather than the ubiquitous ones.
+    gm = con.execute("""SELECT wm.method, count(*) FROM work_methods wm
+                        JOIN authorship a ON wm.work_id=a.work_id
+                        WHERE a.in_universe GROUP BY wm.method""").fetchall()
+    g_total = sum(c for _, c in gm) or 1
+    global_share = {m: c / g_total for m, c in gm}
+
     def community_profile(ci, members):
         mem = [m for m in members]
         top_members = sorted(mem, key=lambda a: meta.get(a, {}).get("cites", 0) or 0,
                              reverse=True)[:8]
         placeholders = ",".join("?" for _ in mem) or "''"
-        methods = con.execute(f"""
+        rows = con.execute(f"""
             SELECT wm.method, count(*) c FROM work_methods wm
             JOIN authorship a ON wm.work_id=a.work_id
-            WHERE a.author_id IN ({placeholders}) GROUP BY wm.method ORDER BY c DESC LIMIT 6
+            WHERE a.author_id IN ({placeholders}) GROUP BY wm.method
         """, mem).fetchall() if mem else []
+        ctot = sum(c for _, c in rows) or 1
+        scored = sorted(
+            (((c / ctot) / global_share.get(m, 1e-9), c, m) for m, c in rows if c >= 4),
+            reverse=True)
+        methods = [(m, c) for _, c, m in scored[:6]]
         insts = defaultdict(int)
         countries = defaultdict(int)
         for m in mem:

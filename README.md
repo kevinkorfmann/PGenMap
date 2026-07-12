@@ -1,9 +1,16 @@
 # PGenMap — Mapping the Evolution of Population Genetics (1985–2025)
 
+**▶ Live interactive dashboard: https://kevinkorfmann.github.io/PGenMap/**
+· **Narrative report: [outputs/report.md](outputs/report.md)**
+
 A data-science project that reconstructs the global **population-genetics /
 evolutionary-genomics** research community from bibliometric data and studies
 **how the field has changed over ~40 years** — its questions, its methods, and
 its social structure (labs and schools of thought).
+
+Built from **28,885 population-genetics papers** by **2,200 researchers**
+(Crossref), analysed into **52 topics**, **24 tracked methods**, **25
+co-authorship communities**, and **213,647 within-corpus citations**.
 
 Starting from a seed of well-known researchers (Rasmus Nielsen, Yun Song,
 Aurélien Tellier, Matteo Fumagalli, the Mathiesons, Andrew Kern, Peter Ralph,

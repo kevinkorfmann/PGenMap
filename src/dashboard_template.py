@@ -215,8 +215,8 @@ function css(v){return getComputedStyle(document.body).getPropertyValue(v).trim(
     ['Publications', m.works!=null?fmt(m.works):'<small>harvesting…</small>'],
     ['With abstracts', m.works_with_abstract!=null?fmt(m.works_with_abstract):'<small>—</small>'],
     ['Span', (m.year_min?`${m.year_min}–${m.year_max}`:'1985–2025')],
-    ['Countries', m.countries!=null?fmt(m.countries):'<small>—</small>'],
-    ['Schools', m.communities!=null?fmt(m.communities):'<small>—</small>'],
+    ['Topics', (DATA.topics&&DATA.topics.length)?fmt(DATA.topics.length):'<small>—</small>'],
+    ['Schools', (m.communities)?fmt(m.communities):'<small>—</small>'],
   ];
   const box=$('#tiles');
   tiles.forEach(([k,v])=>{const t=el('div','tile'); t.appendChild(el('p','k',k)); t.appendChild(el('p','v',v)); box.appendChild(t);});
